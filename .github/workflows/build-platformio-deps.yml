@@ -1,0 +1,78 @@
+name: Build and Package PlatformIO Dependencies
+
+# 手动触发工作流
+on:
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: 'Release tag (e.g., v1.0.0)'
+        required: true
+        default: 'latest'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install PlatformIO Core
+        run: |
+          pip install -U platformio
+          pio --version
+
+      - name: Extract ESP32 platform version from platformio.ini
+        id: extract_version
+        run: |
+          # 从 platformio.ini 中提取 platform = espressif32@x.x.x 的版本号
+          VERSION=$(grep -Po '(?<=platform\s*=\s*espressif32@)[^\s]+' platformio.ini || echo "")
+          if [ -z "$VERSION" ]; then
+            # 如果没有指定 @ 版本，则默认获取最新版（此时需要后面编译时确定）
+            echo "No specific version found, will use latest during build."
+            VERSION="latest"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted platform version: $VERSION"
+
+      - name: Cache PlatformIO packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: ${{ runner.os }}-pio-${{ hashFiles('platformio.ini') }}
+
+      - name: Build the example project (this downloads dependencies)
+        run: |
+          pio run  # 如果项目需要指定环境，可添加 -e <env>
+
+      - name: Package framework-arduinoespressif32
+        run: |
+          mkdir -p output
+          # 找到 framework 目录，通常为 ~/.platformio/packages/framework-arduinoespressif32*
+          FRAMEWORK_DIR=$(ls -d ~/.platformio/packages/framework-arduinoespressif32* | head -n1)
+          if [ -d "$FRAMEWORK_DIR" ]; then
+            echo "Found framework at $FRAMEWORK_DIR"
+            tar -czf output/framework-arduinoespressif32.tar.gz -C ~/.platformio/packages/ $(basename "$FRAMEWORK_DIR")
+          else
+            echo "Framework directory not found!"
+            exit 1
+          fi
+
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.version_tag }}
+          name: PlatformIO Dependencies ${{ github.event.inputs.version_tag }}
+          body: |
+            This release contains the framework-arduinoespressif32 package built for the project.
+            Version extracted from platformio.ini: ${{ steps.extract_version.outputs.version }}
+          files: output/framework-arduinoespressif32.tar.gz
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
