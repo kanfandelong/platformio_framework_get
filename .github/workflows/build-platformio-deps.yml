@@ -9,6 +9,9 @@ on:
         required: true
         default: 'latest'
 
+permissions:
+  contents: write   # 允许写入仓库内容（包括创建 Release）
+
 jobs:
   build:
     runs-on: ubuntu-latest
