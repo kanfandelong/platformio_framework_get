@@ -53,18 +53,34 @@ jobs:
         run: |
           pio run  # 如果项目需要指定环境，可添加 -e <env>
 
-      - name: Package framework-arduinoespressif32
+      - name: Package all PlatformIO dependencies
         run: |
           mkdir -p output
-          # 找到 framework 目录，通常为 ~/.platformio/packages/framework-arduinoespressif32*
-          FRAMEWORK_DIR=$(ls -d ~/.platformio/packages/framework-arduinoespressif32* | head -n1)
-          if [ -d "$FRAMEWORK_DIR" ]; then
-            echo "Found framework at $FRAMEWORK_DIR"
-            tar -czf output/framework-arduinoespressif32.tar.gz -C ~/.platformio/packages/ $(basename "$FRAMEWORK_DIR")
-          else
-            echo "Framework directory not found!"
-            exit 1
+          
+          # 打包 platforms 下的每个子文件夹
+          if [ -d ~/.platformio/platforms ]; then
+            for dir in ~/.platformio/platforms/*/; do
+              if [ -d "$dir" ]; then
+                dirname=$(basename "$dir")
+                tar -czf "output/platforms_${dirname}.tar.gz" -C ~/.platformio/platforms "$dirname"
+                echo "Packaged platforms/$dirname"
+              fi
+            done
           fi
+          
+          # 打包 packages 下的每个子文件夹
+          if [ -d ~/.platformio/packages ]; then
+            for dir in ~/.platformio/packages/*/; do
+              if [ -d "$dir" ]; then
+                dirname=$(basename "$dir")
+                tar -czf "output/packages_${dirname}.tar.gz" -C ~/.platformio/packages "$dirname"
+                echo "Packaged packages/$dirname"
+              fi
+            done
+          fi
+          
+          # 列出打包结果
+          ls -lh output/
 
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v2
@@ -72,9 +88,9 @@ jobs:
           tag_name: ${{ github.event.inputs.version_tag }}
           name: PlatformIO Dependencies ${{ github.event.inputs.version_tag }}
           body: |
-            This release contains the framework-arduinoespressif32 package built for the project.
+            This release contains all PlatformIO platforms and packages used by the project.
             Version extracted from platformio.ini: ${{ steps.extract_version.outputs.version }}
-          files: output/framework-arduinoespressif32.tar.gz
+          files: output/*.tar.gz   # 上传所有生成的压缩包
           draft: false
           prerelease: false
         env:
